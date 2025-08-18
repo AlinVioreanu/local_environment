@@ -1,72 +1,65 @@
-name: Build PeviitorSetup Script
+name: 🚀 Peviitor.ro Installer Builder
 
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
   release:
     types: [ created ]
 
-# Add permissions
 permissions:
-  contents: write          # Allow writing to repository
-  actions: read           # Allow reading actions
-  checks: write           # Allow writing checks
+  contents: write
+  actions: read
+  checks: write
 
 jobs:
-  build:
+  build-installer:                    # ← Custom job name
+    name: 📦 Build Installation Script  # ← Custom display name
     runs-on: windows-latest
     
     steps:
-    # Step 1: Download your repository code
-    - name: Checkout Repository
+    - name: 📥 Download Source Code
       uses: actions/checkout@v4
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
-        fetch-depth: 0      # Fetch full history
+        fetch-depth: 0
         
-    # Step 2: Run your build script
-    - name: Build Combined Script
+    - name: 🔨 Compile Modules into Single Script
       run: |
-        Write-Host "Starting build process..."
+        Write-Host "🔧 Starting Peviitor.ro installer compilation..." -ForegroundColor Cyan
         if (Test-Path "src\Build.ps1") {
           cd src
           .\Build.ps1 -Verbose
-          Write-Host "Build completed successfully!"
+          Write-Host "✅ Compilation successful!" -ForegroundColor Green
         } else {
-          Write-Error "Build.ps1 not found in src\ directory!"
+          Write-Error "❌ Build.ps1 not found!"
           exit 1
         }
       shell: pwsh
       
-    # Step 3: Check if there are changes to commit
-    - name: Check for Changes
+    - name: 🔍 Check for Changes
       id: changes
       run: |
         git add dist/
         if (git diff --staged --quiet) {
-          Write-Host "No changes detected"
+          Write-Host "ℹ️ No changes detected"
           echo "has_changes=false" >> $env:GITHUB_OUTPUT
         } else {
-          Write-Host "Changes detected in dist/ folder"
+          Write-Host "✨ New build detected!"
           echo "has_changes=true" >> $env:GITHUB_OUTPUT
         }
       shell: pwsh
       
-    # Step 4: Commit and push changes (only if there are changes)
-    - name: Commit Built Files
+    - name: 💾 Save Built Installer
       if: steps.changes.outputs.has_changes == 'true'
       run: |
         git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
-        git config --local user.name "github-actions[bot]"
-        git commit -m "🤖 Auto-build: Updated PeviitorSetup.ps1 [skip ci]"
+        git config --local user.name "🤖 Peviitor Builder Bot"
+        git commit -m "🎯 Auto-build: Updated installer v$(Get-Date -Format 'yyyyMMdd-HHmm') [skip ci]"
         git push
-        Write-Host "✅ Successfully pushed updated build files"
+        Write-Host "🚀 Successfully deployed new installer!" -ForegroundColor Green
       shell: pwsh
       
-    # Step 5: Upload to release (if this is a release)
-    - name: Upload Release Asset
+    - name: 📎 Attach to Release
       if: github.event_name == 'release'
       uses: actions/upload-release-asset@v1
       env:
