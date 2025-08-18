@@ -1,0 +1,46 @@
+name: Build PeviitorSetup Script
+
+# When to run: on every push to main branch and on releases
+on:
+  push:
+    branches: [ main ]
+  release:
+    types: [ created ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    # Download your repository code
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      
+    # Run your build script
+    - name: Build Combined Script
+      run: |
+        cd src
+        .\Build.ps1
+      shell: pwsh
+      
+    # Commit the built file back to repository
+    - name: Commit Built Files
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add dist/
+        git diff --staged --quiet || git commit -m "Auto-build: Updated PeviitorSetup.ps1"
+        git push
+      shell: pwsh
+      
+    # If this is a release, upload the built script as release asset
+    - name: Upload Release Asset
+      if: github.event_name == 'release'
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: ./dist/PeviitorSetup.ps1
+        asset_name: PeviitorSetup.ps1
+        asset_content_type: text/plain
