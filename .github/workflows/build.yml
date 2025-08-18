@@ -1,39 +1,71 @@
 name: Build PeviitorSetup Script
 
-# When to run: on every push to main branch and on releases
 on:
   push:
     branches: [ main ]
+  pull_request:
+    branches: [ main ]
   release:
     types: [ created ]
+
+# Add permissions
+permissions:
+  contents: write          # Allow writing to repository
+  actions: read           # Allow reading actions
+  checks: write           # Allow writing checks
 
 jobs:
   build:
     runs-on: windows-latest
     
     steps:
-    # Download your repository code
+    # Step 1: Download your repository code
     - name: Checkout Repository
       uses: actions/checkout@v4
-      
-    # Run your build script
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0      # Fetch full history
+        
+    # Step 2: Run your build script
     - name: Build Combined Script
       run: |
-        cd src
-        .\Build.ps1
+        Write-Host "Starting build process..."
+        if (Test-Path "src\Build.ps1") {
+          cd src
+          .\Build.ps1 -Verbose
+          Write-Host "Build completed successfully!"
+        } else {
+          Write-Error "Build.ps1 not found in src\ directory!"
+          exit 1
+        }
       shell: pwsh
       
-    # Commit the built file back to repository
-    - name: Commit Built Files
+    # Step 3: Check if there are changes to commit
+    - name: Check for Changes
+      id: changes
       run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
         git add dist/
-        git diff --staged --quiet || git commit -m "Auto-build: Updated PeviitorSetup.ps1"
-        git push
+        if (git diff --staged --quiet) {
+          Write-Host "No changes detected"
+          echo "has_changes=false" >> $env:GITHUB_OUTPUT
+        } else {
+          Write-Host "Changes detected in dist/ folder"
+          echo "has_changes=true" >> $env:GITHUB_OUTPUT
+        }
       shell: pwsh
       
-    # If this is a release, upload the built script as release asset
+    # Step 4: Commit and push changes (only if there are changes)
+    - name: Commit Built Files
+      if: steps.changes.outputs.has_changes == 'true'
+      run: |
+        git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git config --local user.name "github-actions[bot]"
+        git commit -m "🤖 Auto-build: Updated PeviitorSetup.ps1 [skip ci]"
+        git push
+        Write-Host "✅ Successfully pushed updated build files"
+      shell: pwsh
+      
+    # Step 5: Upload to release (if this is a release)
     - name: Upload Release Asset
       if: github.event_name == 'release'
       uses: actions/upload-release-asset@v1
