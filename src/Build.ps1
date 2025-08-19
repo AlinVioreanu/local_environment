@@ -191,6 +191,9 @@ try {
 
 # Write the combined script to output file
 try {
+    # Ensure Windows line endings (CRLF) for consistency
+    $combinedScript = $combinedScript -replace "`r`n", "`n" -replace "`n", "`r`n"
+    
     Set-Content -Path $OutputPath -Value $combinedScript -Encoding UTF8
     Write-Host "✅ Build completed successfully!" -ForegroundColor Green
     Write-Host "Output file: $OutputPath" -ForegroundColor White
