@@ -12,8 +12,8 @@ permissions:
   checks: write
 
 jobs:
-  build-installer:                    # ← Custom job name
-    name: 📦 Build Installation Script  # ← Custom display name
+  build-installer:
+    name: 📦 Build Installation Script
     runs-on: windows-latest
     
     steps:
@@ -22,6 +22,8 @@ jobs:
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
         fetch-depth: 0
+        # For releases, checkout the main branch instead of the tag
+        ref: ${{ github.event_name == 'release' && 'main' || github.ref }}
         
     - name: 🔨 Compile Modules into Single Script
       run: |
@@ -49,16 +51,18 @@ jobs:
         }
       shell: pwsh
       
-    - name: 💾 Save Built Installer
-      if: steps.changes.outputs.has_changes == 'true'
+    # Only commit changes if this is a push (not a release)
+    - name: 💾 Save Built Installer to Main Branch
+      if: steps.changes.outputs.has_changes == 'true' && github.event_name != 'release'
       run: |
         git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
         git config --local user.name "🤖 Peviitor Builder Bot"
         git commit -m "🎯 Auto-build: Updated installer v$(Get-Date -Format 'yyyyMMdd-HHmm') [skip ci]"
-        git push
-        Write-Host "🚀 Successfully deployed new installer!" -ForegroundColor Green
+        git push origin main
+        Write-Host "🚀 Successfully updated installer on main branch!" -ForegroundColor Green
       shell: pwsh
       
+    # For releases, just build and attach (don't commit back)
     - name: 📎 Attach to Release
       if: github.event_name == 'release'
       uses: actions/upload-release-asset@v1
@@ -69,3 +73,13 @@ jobs:
         asset_path: ./dist/PeviitorSetup.ps1
         asset_name: PeviitorSetup.ps1
         asset_content_type: text/plain
+        
+    # Also create a downloadable artifact for every build
+    - name: 📤 Create Build Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: PeviitorSetup-${{ github.run_number }}
+        path: |
+          ./dist/PeviitorSetup.ps1
+          ./dist/VERIFICATION.md
+        retention-days: 30
