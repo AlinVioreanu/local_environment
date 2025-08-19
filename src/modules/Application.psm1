@@ -13,4 +13,4 @@
 #>
 
 # Application deployment and configuration functions will go here
-echo "# Test fix" >> src\modules\Core.psm1
+echo "# Dummy test" >> src\modules\Core.psm1
