@@ -76,7 +76,7 @@ jobs:
         
     # Also create a downloadable artifact for every build
     - name: 📤 Create Build Artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: PeviitorSetup-${{ github.run_number }}
         path: |
