@@ -1,91 +1,21 @@
 <#
 .SYNOPSIS
-    Build Script with Semantic Versioning
+    Build Script - PowerShell 5.1 Compatible Version
 .DESCRIPTION
-    Builds the installer with proper version management
-.PARAMETER Version
-    Override version (otherwise uses git tag or default)
+    Combines all modules into single distributable script
 #>
 
 param(
     [string]$OutputPath = "..\dist\PeviitorSetup.ps1",
-    [string]$Version = $null,
+    [string]$Version = "0.1.0",
     [switch]$Verbose
 )
 
-# ============================================================================
-# VERSION MANAGEMENT
-# ============================================================================
-
-function Get-ProjectVersion {
-    param([string]$OverrideVersion)
-    
-    # If version is provided, use it
-    if ($OverrideVersion) {
-        return $OverrideVersion
-    }
-    
-    # Try to get version from git tag
-    try {
-        $gitTag = git describe --tags --exact-match 2>$null
-        if ($gitTag -match '^v?(\d+\.\d+\.\d+)') {
-            return $matches[1]
-        }
-    } catch {
-        # Git tag not available
-    }
-    
-    # Try to get latest tag and increment
-    try {
-        $latestTag = git describe --tags --abbrev=0 2>$null
-        if ($latestTag -match '^v?(\d+)\.(\d+)\.(\d+)') {
-            $major = [int]$matches[1]
-            $minor = [int]$matches[2]
-            $patch = [int]$matches[3]
-            
-            # Get commit count since last tag
-            $commitCount = git rev-list --count "$latestTag..HEAD" 2>$null
-            if ($commitCount -and [int]$commitCount -gt 0) {
-                # Increment patch version for development builds
-                $patch++
-                return "$major.$minor.$patch-dev.$commitCount"
-            }
-            
-            return "$major.$minor.$patch"
-        }
-    } catch {
-        # No git tags available
-    }
-    
-    # Default version for initial development
-    return "0.1.0-dev"
+$BuildInfo = @{
+    Version = $Version
+    BuildDate = Get-Date
+    Modules = 6
 }
-
-function Get-BuildMetadata {
-    $metadata = @{
-        Version = Get-ProjectVersion $Version
-        BuildDate = Get-Date
-        GitCommit = ""
-        GitBranch = ""
-        BuildNumber = $env:GITHUB_RUN_NUMBER ?? "local"
-    }
-    
-    # Get Git information if available
-    try {
-        $metadata.GitCommit = (git rev-parse --short HEAD 2>$null) ?? "unknown"
-        $metadata.GitBranch = (git branch --show-current 2>$null) ?? "unknown"
-    } catch {
-        # Git not available
-    }
-    
-    return $metadata
-}
-
-# ============================================================================
-# BUILD PROCESS
-# ============================================================================
-
-$BuildInfo = Get-BuildMetadata
 
 $ModuleOrder = @(
     "Core.psm1",
@@ -99,9 +29,6 @@ $ModuleOrder = @(
 Write-Host "=== PEVIITOR.RO BUILD SYSTEM ===" -ForegroundColor Cyan
 Write-Host "Version: $($BuildInfo.Version)" -ForegroundColor Green
 Write-Host "Build Date: $($BuildInfo.BuildDate)" -ForegroundColor Gray
-Write-Host "Git Commit: $($BuildInfo.GitCommit)" -ForegroundColor Gray
-Write-Host "Git Branch: $($BuildInfo.GitBranch)" -ForegroundColor Gray
-Write-Host "Build Number: $($BuildInfo.BuildNumber)" -ForegroundColor Gray
 Write-Host "Modules: $($ModuleOrder.Count)" -ForegroundColor Gray
 
 # Ensure output directory exists
@@ -111,7 +38,7 @@ if (!(Test-Path $outputDir)) {
     Write-Host "Created output directory: $outputDir" -ForegroundColor Green
 }
 
-# Build the combined script with version info
+# Build the combined script
 $combinedScript = @"
 #Requires -Version 5.1
 
@@ -123,36 +50,17 @@ $combinedScript = @"
 .NOTES
     Version: $($BuildInfo.Version)
     Build Date: $($BuildInfo.BuildDate)
-    Git Commit: $($BuildInfo.GitCommit)
-    Build Number: $($BuildInfo.BuildNumber)
 .LINK
     https://github.com/AlinVioreanu/local_environment
 #>
 
-# ============================================================================
-# SCRIPT METADATA
-# ============================================================================
-`$ScriptVersion = "$($BuildInfo.Version)"
-`$ScriptBuildDate = "$($BuildInfo.BuildDate)"
-`$ScriptGitCommit = "$($BuildInfo.GitCommit)"
-`$ScriptBuildNumber = "$($BuildInfo.BuildNumber)"
-
-Write-Host "Peviitor.ro Installer v`$ScriptVersion" -ForegroundColor Cyan
-Write-Host "Build: `$ScriptBuildNumber | Commit: `$ScriptGitCommit" -ForegroundColor Gray
+Write-Host "Peviitor.ro Installer v$($BuildInfo.Version)" -ForegroundColor Cyan
+Write-Host "Build Date: $($BuildInfo.BuildDate)" -ForegroundColor Gray
 
 param(
     [switch]`$SkipBrowser,
-    [switch]`$Verbose,
-    [switch]`$ShowVersion
+    [switch]`$Verbose
 )
-
-if (`$ShowVersion) {
-    Write-Host "Version: `$ScriptVersion"
-    Write-Host "Build Date: `$ScriptBuildDate"
-    Write-Host "Git Commit: `$ScriptGitCommit"
-    Write-Host "Build Number: `$ScriptBuildNumber"
-    exit 0
-}
 
 # Set strict mode and error handling
 Set-StrictMode -Version Latest
@@ -169,7 +77,7 @@ Set-StrictMode -Version Latest
 
 "@
 
-# Process modules (same as before)
+# Process modules
 foreach ($moduleName in $ModuleOrder) {
     $modulePath = ".\modules\$moduleName"
     
@@ -196,7 +104,7 @@ foreach ($moduleName in $ModuleOrder) {
     }
 }
 
-# Add main execution flow with version logging
+# Add main execution flow
 $combinedScript += @"
 
 # ============================================================================
@@ -205,9 +113,8 @@ $combinedScript += @"
 
 try {
     Write-Log "=== PEVIITOR.RO SETUP STARTED ===" "INFO"
-    Write-Log "Installer Version: `$ScriptVersion" "INFO"
-    Write-Log "Build Date: `$ScriptBuildDate" "INFO"
-    Write-Log "Git Commit: `$ScriptGitCommit" "INFO"
+    Write-Log "Installer Version: $($BuildInfo.Version)" "INFO"
+    Write-Log "Build Date: $($BuildInfo.BuildDate)" "INFO"
     Write-Log "PowerShell Version: `$(`$PSVersionTable.PSVersion)" "INFO"
     Write-Log "OS: `$([Environment]::OSVersion.VersionString)" "INFO"
     Write-Log "User: `$env:USERNAME" "INFO"
@@ -230,17 +137,30 @@ try {
     Launch-Browser
     Show-CompletionSummary
     
-    Write-Log "Setup completed successfully (v`$ScriptVersion)" "SUCCESS"
+    Write-Log "Setup completed successfully (v$($BuildInfo.Version))" "SUCCESS"
     Cleanup-OnSuccess
     
 } catch {
-    Write-ErrorLog "Script Execution" "Setup failed in version `$ScriptVersion" `$_
-    Write-Host "`n❌ SETUP FAILED (Version: `$ScriptVersion)" -ForegroundColor Red
+    Write-ErrorLog "Script Execution" "Setup failed in version $($BuildInfo.Version)" `$_
+    
+    Write-Host "`n❌ SETUP FAILED (Version: $($BuildInfo.Version))" -ForegroundColor Red
+    Write-Host "=================================================================" -ForegroundColor Red
+    Show-ErrorLocation
+    
+    Write-Host "`n🔧 TROUBLESHOOTING STEPS:" -ForegroundColor Yellow
+    Write-Host "1. Check if you're running as Administrator" -ForegroundColor Gray
+    Write-Host "2. Ensure Docker Desktop is installed and running" -ForegroundColor Gray
+    Write-Host "3. Check internet connectivity" -ForegroundColor Gray
+    Write-Host "4. Send the log file above to support" -ForegroundColor Gray
+    Write-Host "5. Try running the script again" -ForegroundColor Gray
+    
+    Write-Host "`n📧 Support: Include the log file when reporting issues" -ForegroundColor Cyan
+    Read-Host "`nPress Enter to exit"
     exit 1
 }
 "@
 
-# Write output with proper line endings
+# Write output
 try {
     $combinedScript = $combinedScript -replace "`r`n", "`n" -replace "`n", "`r`n"
     Set-Content -Path $OutputPath -Value $combinedScript -Encoding UTF8
@@ -248,7 +168,7 @@ try {
     # Generate hash
     $hash = Get-FileHash $OutputPath -Algorithm SHA256
     
-    # Create enhanced verification file
+    # Create verification file
     $verificationPath = Join-Path (Split-Path $OutputPath -Parent) "VERIFICATION.md"
     $verificationContent = @"
 # PeviitorSetup.ps1 Verification
@@ -256,9 +176,7 @@ try {
 ## Build Information
 - **Version:** $($BuildInfo.Version)
 - **Build Date:** $($BuildInfo.BuildDate)
-- **Git Commit:** $($BuildInfo.GitCommit)
-- **Git Branch:** $($BuildInfo.GitBranch)
-- **Build Number:** $($BuildInfo.BuildNumber)
+- **Modules:** $($BuildInfo.Modules)
 
 ## File Information
 - **File:** PeviitorSetup.ps1
@@ -271,13 +189,7 @@ try {
 # Verify file integrity
 Get-FileHash "PeviitorSetup.ps1" -Algorithm SHA256
 # Expected: $($hash.Hash)
-
-# Check version
-.\PeviitorSetup.ps1 -ShowVersion
 ``````
-
-## Modules Included
-$($ModuleOrder | ForEach-Object { "- $_" } | Out-String)
 
 ## Usage
 ``````powershell
@@ -289,9 +201,6 @@ $($ModuleOrder | ForEach-Object { "- $_" } | Out-String)
 
 # Verbose output
 .\PeviitorSetup.ps1 -Verbose
-
-# Show version info
-.\PeviitorSetup.ps1 -ShowVersion
 ``````
 "@
     
