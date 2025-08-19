@@ -1,42 +1,108 @@
 <#
 .SYNOPSIS
-    Build Script - Combines all modules into single distributable script
+    Build Script with Semantic Versioning
 .DESCRIPTION
-    Development utility that:
-    - Reads all module files in correct order
-    - Combines them into one script
-    - Generates SHA256 hash for verification
-    - Creates distribution package in dist/ folder
-.EXAMPLE
-    .\Build.ps1
-    Builds PeviitorSetup.ps1 in ../dist/ folder
+    Builds the installer with proper version management
+.PARAMETER Version
+    Override version (otherwise uses git tag or default)
 #>
 
 param(
     [string]$OutputPath = "..\dist\PeviitorSetup.ps1",
+    [string]$Version = $null,
     [switch]$Verbose
 )
 
-# Configuration
-$ModuleOrder = @(
-    "Core.psm1",           # Must be first (logging functions)
-    "Prerequisites.psm1",  # Second (validation)
-    "UserInput.psm1",      # Third (user interaction)
-    "Installation.psm1",   # Fourth (software installation)
-    "Environment.psm1",    # Fifth (environment setup)
-    "Application.psm1"     # Last (application deployment)
-)
+# ============================================================================
+# VERSION MANAGEMENT
+# ============================================================================
 
-$BuildInfo = @{
-    BuildDate = Get-Date
-    Version = "1.0.0"
-    Modules = $ModuleOrder.Count
+function Get-ProjectVersion {
+    param([string]$OverrideVersion)
+    
+    # If version is provided, use it
+    if ($OverrideVersion) {
+        return $OverrideVersion
+    }
+    
+    # Try to get version from git tag
+    try {
+        $gitTag = git describe --tags --exact-match 2>$null
+        if ($gitTag -match '^v?(\d+\.\d+\.\d+)') {
+            return $matches[1]
+        }
+    } catch {
+        # Git tag not available
+    }
+    
+    # Try to get latest tag and increment
+    try {
+        $latestTag = git describe --tags --abbrev=0 2>$null
+        if ($latestTag -match '^v?(\d+)\.(\d+)\.(\d+)') {
+            $major = [int]$matches[1]
+            $minor = [int]$matches[2]
+            $patch = [int]$matches[3]
+            
+            # Get commit count since last tag
+            $commitCount = git rev-list --count "$latestTag..HEAD" 2>$null
+            if ($commitCount -and [int]$commitCount -gt 0) {
+                # Increment patch version for development builds
+                $patch++
+                return "$major.$minor.$patch-dev.$commitCount"
+            }
+            
+            return "$major.$minor.$patch"
+        }
+    } catch {
+        # No git tags available
+    }
+    
+    # Default version for initial development
+    return "0.1.0-dev"
 }
 
-Write-Host "=== PEVIITOR.RO BUILD SCRIPT ===" -ForegroundColor Cyan
-Write-Host "Building single script from modules..." -ForegroundColor White
+function Get-BuildMetadata {
+    $metadata = @{
+        Version = Get-ProjectVersion $Version
+        BuildDate = Get-Date
+        GitCommit = ""
+        GitBranch = ""
+        BuildNumber = $env:GITHUB_RUN_NUMBER ?? "local"
+    }
+    
+    # Get Git information if available
+    try {
+        $metadata.GitCommit = (git rev-parse --short HEAD 2>$null) ?? "unknown"
+        $metadata.GitBranch = (git branch --show-current 2>$null) ?? "unknown"
+    } catch {
+        # Git not available
+    }
+    
+    return $metadata
+}
+
+# ============================================================================
+# BUILD PROCESS
+# ============================================================================
+
+$BuildInfo = Get-BuildMetadata
+
+$ModuleOrder = @(
+    "Core.psm1",
+    "Prerequisites.psm1", 
+    "UserInput.psm1",
+    "Installation.psm1",
+    "Environment.psm1",
+    "Application.psm1"
+)
+
+Write-Host "=== PEVIITOR.RO BUILD SYSTEM ===" -ForegroundColor Cyan
+Write-Host "Version: $($BuildInfo.Version)" -ForegroundColor Green
 Write-Host "Build Date: $($BuildInfo.BuildDate)" -ForegroundColor Gray
-Write-Host "Modules to combine: $($BuildInfo.Modules)" -ForegroundColor Gray
+Write-Host "Git Commit: $($BuildInfo.GitCommit)" -ForegroundColor Gray
+Write-Host "Git Branch: $($BuildInfo.GitBranch)" -ForegroundColor Gray
+Write-Host "Build Number: $($BuildInfo.BuildNumber)" -ForegroundColor Gray
+Write-Host "Modules: $($ModuleOrder.Count)" -ForegroundColor Gray
 
 # Ensure output directory exists
 $outputDir = Split-Path $OutputPath -Parent
@@ -45,7 +111,7 @@ if (!(Test-Path $outputDir)) {
     Write-Host "Created output directory: $outputDir" -ForegroundColor Green
 }
 
-# Start building the combined script
+# Build the combined script with version info
 $combinedScript = @"
 #Requires -Version 5.1
 
@@ -53,39 +119,47 @@ $combinedScript = @"
 .SYNOPSIS
     Peviitor.ro Local Development Environment Installer
 .DESCRIPTION
-    Complete setup script for peviitor.ro local development environment including:
-    - Prerequisites validation and system checks
-    - Docker containers (Apache, Solr)
-    - Frontend build deployment
-    - API configuration
-    - Search engine setup with authentication
-    - JMeter installation and data migration
+    Complete setup script for peviitor.ro local development environment
 .NOTES
-    Auto-generated from modules on $($BuildInfo.BuildDate)
-    Source modules: $($BuildInfo.Modules)
-    Build version: $($BuildInfo.Version)
+    Version: $($BuildInfo.Version)
+    Build Date: $($BuildInfo.BuildDate)
+    Git Commit: $($BuildInfo.GitCommit)
+    Build Number: $($BuildInfo.BuildNumber)
 .LINK
     https://github.com/AlinVioreanu/local_environment
 #>
 
 # ============================================================================
-# COMBINED SCRIPT - AUTO-GENERATED FROM MODULES
-# Build Date: $($BuildInfo.BuildDate)
-# Build Version: $($BuildInfo.Version)
-# Modules Combined: $($BuildInfo.Modules)
+# SCRIPT METADATA
 # ============================================================================
+`$ScriptVersion = "$($BuildInfo.Version)"
+`$ScriptBuildDate = "$($BuildInfo.BuildDate)"
+`$ScriptGitCommit = "$($BuildInfo.GitCommit)"
+`$ScriptBuildNumber = "$($BuildInfo.BuildNumber)"
+
+Write-Host "Peviitor.ro Installer v`$ScriptVersion" -ForegroundColor Cyan
+Write-Host "Build: `$ScriptBuildNumber | Commit: `$ScriptGitCommit" -ForegroundColor Gray
 
 param(
     [switch]`$SkipBrowser,
-    [switch]`$Verbose
+    [switch]`$Verbose,
+    [switch]`$ShowVersion
 )
+
+if (`$ShowVersion) {
+    Write-Host "Version: `$ScriptVersion"
+    Write-Host "Build Date: `$ScriptBuildDate"
+    Write-Host "Git Commit: `$ScriptGitCommit"
+    Write-Host "Build Number: `$ScriptBuildNumber"
+    exit 0
+}
 
 # Set strict mode and error handling
 Set-StrictMode -Version Latest
 `$ErrorActionPreference = "Stop"
 `$ProgressPreference = "Continue"
 
-# Global variables for the combined script
+# Global variables
 `$LogFile = "`$PSScriptRoot\peviitor-setup-`$(Get-Date -Format 'yyyyMMdd-HHmmss').log"
 `$StartTime = Get-Date
 `$TotalSteps = 16
@@ -95,28 +169,22 @@ Set-StrictMode -Version Latest
 
 "@
 
-# Process each module in order
+# Process modules (same as before)
 foreach ($moduleName in $ModuleOrder) {
     $modulePath = ".\modules\$moduleName"
     
     if (Test-Path $modulePath) {
         Write-Host "Processing module: $moduleName" -ForegroundColor Green
         
-        # Add module header
         $moduleDisplayName = $moduleName -replace '\.psm1$', ''
         $combinedScript += "`n`n# ============================================================================`n"
         $combinedScript += "# MODULE: $moduleDisplayName`n"
-        $combinedScript += "# Source: $moduleName`n"
         $combinedScript += "# ============================================================================`n`n"
         
-        # Read and process module content
         $moduleContent = Get-Content $modulePath -Raw -Encoding UTF8
-        
-        # Remove module-specific exports and headers that aren't needed in combined script
         $moduleContent = $moduleContent -replace 'Export-ModuleMember[^\r\n]*[\r\n]*', ''
         $moduleContent = $moduleContent -replace '#Requires[^\r\n]*[\r\n]*', ''
         
-        # Add processed content
         $combinedScript += $moduleContent
         
         if ($Verbose) {
@@ -125,11 +193,10 @@ foreach ($moduleName in $ModuleOrder) {
         }
     } else {
         Write-Warning "Module not found: $modulePath"
-        Write-Host "  Skipping $moduleName" -ForegroundColor Yellow
     }
 }
 
-# Add the main execution flow
+# Add main execution flow with version logging
 $combinedScript += @"
 
 # ============================================================================
@@ -137,115 +204,108 @@ $combinedScript += @"
 # ============================================================================
 
 try {
-    # Initialize logging
     Write-Log "=== PEVIITOR.RO SETUP STARTED ===" "INFO"
-    Write-Log "Build Version: $($BuildInfo.Version)" "INFO"
-    Write-Log "Build Date: $($BuildInfo.BuildDate)" "INFO"
+    Write-Log "Installer Version: `$ScriptVersion" "INFO"
+    Write-Log "Build Date: `$ScriptBuildDate" "INFO"
+    Write-Log "Git Commit: `$ScriptGitCommit" "INFO"
     Write-Log "PowerShell Version: `$(`$PSVersionTable.PSVersion)" "INFO"
     Write-Log "OS: `$([Environment]::OSVersion.VersionString)" "INFO"
     Write-Log "User: `$env:USERNAME" "INFO"
-    Write-Log "Script Location: `$PSScriptRoot" "INFO"
     
-    # Execute all setup steps in order
-    Test-Prerequisites          # Step 1: System validation
-    Get-SolrCredentials        # Step 2: User input
-    Install-Git                # Step 3: Git installation
-    Install-Docker             # Step 4: Docker installation  
-    Initialize-Environment     # Step 5: Environment setup
-    Deploy-Frontend            # Step 6: Frontend deployment
-    Configure-API              # Step 7: API configuration
-    Deploy-ApacheContainer     # Step 8: Apache container
-    Deploy-SolrContainer       # Step 9: Solr container
-    Configure-SolrCores        # Step 10: Solr cores
-    Configure-SolrAuthentication # Step 11: Solr auth
-    Configure-SolrUsers        # Step 12: Solr users
-    Install-JavaAndJMeter      # Step 13: Java/JMeter
-    Test-Services              # Step 14: Service verification
-    Launch-Browser             # Step 15: Browser launch
-    Show-CompletionSummary     # Step 16: Completion
+    # Execute setup steps
+    Test-Prerequisites
+    Get-SolrCredentials
+    Install-Git
+    Install-Docker
+    Initialize-Environment
+    Deploy-Frontend
+    Configure-API
+    Deploy-ApacheContainer
+    Deploy-SolrContainer
+    Configure-SolrCores
+    Configure-SolrAuthentication
+    Configure-SolrUsers
+    Install-JavaAndJMeter
+    Test-Services
+    Launch-Browser
+    Show-CompletionSummary
     
-    # Success cleanup
-    Write-Log "Setup completed successfully" "SUCCESS"
+    Write-Log "Setup completed successfully (v`$ScriptVersion)" "SUCCESS"
     Cleanup-OnSuccess
     
 } catch {
-    # Error handling
-    Write-Progress -Activity "Peviitor.ro Setup" -Completed
-    Write-ErrorLog "Script Execution" "Unhandled error occurred" `$_
-    
-    Write-Host "`n❌ SETUP FAILED" -ForegroundColor Red
-    Write-Host "Error log saved to: `$LogFile" -ForegroundColor Yellow
-    Write-Host "Please send this log file for support assistance." -ForegroundColor Cyan
-    
-    Write-Host "`nTROUBLESHOOTING STEPS:" -ForegroundColor Yellow
-    Write-Host "1. Check if Docker Desktop is running" -ForegroundColor Gray
-    Write-Host "2. Ensure you have administrator privileges" -ForegroundColor Gray  
-    Write-Host "3. Check internet connectivity" -ForegroundColor Gray
-    Write-Host "4. Try running the script again" -ForegroundColor Gray
-    Write-Host "5. If problems persist, send the log file for support" -ForegroundColor Gray
-    
-    Read-Host "`nPress Enter to exit"
+    Write-ErrorLog "Script Execution" "Setup failed in version `$ScriptVersion" `$_
+    Write-Host "`n❌ SETUP FAILED (Version: `$ScriptVersion)" -ForegroundColor Red
     exit 1
 }
 "@
 
-# Write the combined script to output file
+# Write output with proper line endings
 try {
-    # Ensure Windows line endings (CRLF) for consistency
     $combinedScript = $combinedScript -replace "`r`n", "`n" -replace "`n", "`r`n"
-    
     Set-Content -Path $OutputPath -Value $combinedScript -Encoding UTF8
-    Write-Host "✅ Build completed successfully!" -ForegroundColor Green
-    Write-Host "Output file: $OutputPath" -ForegroundColor White
     
-    # Generate verification hash
+    # Generate hash
     $hash = Get-FileHash $OutputPath -Algorithm SHA256
-    Write-Host "SHA256 Hash: $($hash.Hash)" -ForegroundColor Yellow
     
-    # Create verification documentation
+    # Create enhanced verification file
     $verificationPath = Join-Path (Split-Path $OutputPath -Parent) "VERIFICATION.md"
     $verificationContent = @"
 # PeviitorSetup.ps1 Verification
 
-**File:** PeviitorSetup.ps1  
-**Build Date:** $($BuildInfo.BuildDate)  
-**Build Version:** $($BuildInfo.Version)  
-**Modules Combined:** $($BuildInfo.Modules)  
-**SHA256 Hash:** $($hash.Hash)
+## Build Information
+- **Version:** $($BuildInfo.Version)
+- **Build Date:** $($BuildInfo.BuildDate)
+- **Git Commit:** $($BuildInfo.GitCommit)
+- **Git Branch:** $($BuildInfo.GitBranch)
+- **Build Number:** $($BuildInfo.BuildNumber)
 
-## Verify Download Integrity:
+## File Information
+- **File:** PeviitorSetup.ps1
+- **Size:** $([math]::Round((Get-Item $OutputPath).Length / 1KB, 2)) KB
+- **Lines:** $(($combinedScript -split "`n").Count)
+- **SHA256:** $($hash.Hash)
 
+## Verification
 ``````powershell
+# Verify file integrity
 Get-FileHash "PeviitorSetup.ps1" -Algorithm SHA256
 # Expected: $($hash.Hash)
+
+# Check version
+.\PeviitorSetup.ps1 -ShowVersion
 ``````
 
-## Build Information:
-- **Source Modules:** $($ModuleOrder -join ', ')
-- **Build Date:** $($BuildInfo.BuildDate)
-- **Total Lines:** $(($combinedScript -split "`n").Count)
+## Modules Included
+$($ModuleOrder | ForEach-Object { "- $_" } | Out-String)
 
-## Usage:
-1. Verify the hash matches the expected value above
-2. Right-click PeviitorSetup.ps1 → "Run with PowerShell"
-3. Or run from PowerShell as Administrator: ``.\PeviitorSetup.ps1``
+## Usage
+``````powershell
+# Standard installation
+.\PeviitorSetup.ps1
+
+# Skip browser launch
+.\PeviitorSetup.ps1 -SkipBrowser
+
+# Verbose output
+.\PeviitorSetup.ps1 -Verbose
+
+# Show version info
+.\PeviitorSetup.ps1 -ShowVersion
+``````
 "@
     
     Set-Content -Path $verificationPath -Value $verificationContent -Encoding UTF8
-    Write-Host "✅ Verification file created: $verificationPath" -ForegroundColor Green
     
     # Build summary
-    $scriptLines = ($combinedScript -split "`n").Count
-    $fileSize = [math]::Round((Get-Item $OutputPath).Length / 1KB, 2)
-    
-    Write-Host "`n=== BUILD SUMMARY ===" -ForegroundColor Cyan
-    Write-Host "Modules processed: $($BuildInfo.Modules)" -ForegroundColor White
-    Write-Host "Total lines: $scriptLines" -ForegroundColor White  
-    Write-Host "File size: ${fileSize} KB" -ForegroundColor White
-    Write-Host "Build version: $($BuildInfo.Version)" -ForegroundColor White
-    Write-Host "`nReady for distribution! 🚀" -ForegroundColor Green
+    Write-Host "`n=== BUILD COMPLETED ===" -ForegroundColor Green
+    Write-Host "Version: $($BuildInfo.Version)" -ForegroundColor Cyan
+    Write-Host "Output: $OutputPath" -ForegroundColor White
+    Write-Host "Hash: $($hash.Hash.Substring(0,16))..." -ForegroundColor Yellow
+    Write-Host "Size: $([math]::Round((Get-Item $OutputPath).Length / 1KB, 2)) KB" -ForegroundColor White
+    Write-Host "`n🚀 Ready for distribution!" -ForegroundColor Green
     
 } catch {
-    Write-Error "Failed to write output file: $($_.Exception.Message)"
+    Write-Error "Build failed: $($_.Exception.Message)"
     exit 1
 }
