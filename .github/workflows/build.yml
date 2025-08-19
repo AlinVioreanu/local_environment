@@ -28,12 +28,30 @@ jobs:
     - name: 🔨 Compile Modules into Single Script
       run: |
         Write-Host "🔧 Starting Peviitor.ro installer compilation..." -ForegroundColor Cyan
-        if (Test-Path "src\Build.ps1") {
-          cd src
-          .\Build.ps1 -Verbose
-          Write-Host "✅ Compilation successful!" -ForegroundColor Green
+        Write-Host "📁 Current directory: $(Get-Location)"
+        Write-Host "📁 Contents of current directory:"
+        Get-ChildItem | ForEach-Object { Write-Host "  $($_.Name)" }
+        
+        if (Test-Path "src") {
+          Write-Host "📁 Contents of src/ directory:"
+          Get-ChildItem "src" | ForEach-Object { Write-Host "  $($_.Name)" }
         } else {
-          Write-Error "❌ Build.ps1 not found!"
+          Write-Host "❌ src/ directory not found!"
+          exit 1
+        }
+        
+        if (Test-Path "src\Build.ps1") {
+          Write-Host "✅ Build.ps1 found in src/" -ForegroundColor Green
+          cd src
+          Write-Host "🔧 Running Build.ps1..."
+          .\Build.ps1 -Verbose
+          Write-Host "✅ Build.ps1 execution completed!" -ForegroundColor Green
+        } else {
+          Write-Host "❌ Build.ps1 not found in src/ directory!"
+          Write-Host "Available files in src/:"
+          if (Test-Path "src") {
+            Get-ChildItem "src" | ForEach-Object { Write-Host "  - $($_.Name)" }
+          }
           exit 1
         }
       shell: pwsh
@@ -41,6 +59,10 @@ jobs:
     - name: 🔍 Check for Changes
       id: changes
       run: |
+        # Configure Git to handle line endings properly
+        git config core.autocrlf true
+        git config core.safecrlf false
+        
         git add dist/
         if (git diff --staged --quiet) {
           Write-Host "ℹ️ No changes detected"
