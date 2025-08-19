@@ -74,12 +74,39 @@ jobs:
         asset_name: PeviitorSetup.ps1
         asset_content_type: text/plain
         
-    # Also create a downloadable artifact for every build
+    # Check what files were actually created
+    - name: 🔍 Verify Build Output
+      run: |
+        Write-Host "📁 Checking build output..." -ForegroundColor Cyan
+        Write-Host "Current directory: $(Get-Location)"
+        Write-Host "Contents of current directory:"
+        Get-ChildItem -Recurse | ForEach-Object { Write-Host "  $($_.FullName)" }
+        
+        if (Test-Path "dist") {
+          Write-Host "📁 Contents of dist/ folder:"
+          Get-ChildItem "dist" | ForEach-Object { Write-Host "  ✅ $($_.Name)" -ForegroundColor Green }
+        } else {
+          Write-Host "❌ dist/ folder not found!" -ForegroundColor Red
+        }
+        
+        if (Test-Path "dist\PeviitorSetup.ps1") {
+          Write-Host "✅ PeviitorSetup.ps1 found" -ForegroundColor Green
+        } else {
+          Write-Host "❌ PeviitorSetup.ps1 not found" -ForegroundColor Red
+        }
+        
+        if (Test-Path "dist\VERIFICATION.md") {
+          Write-Host "✅ VERIFICATION.md found" -ForegroundColor Green
+        } else {
+          Write-Host "❌ VERIFICATION.md not found" -ForegroundColor Red
+        }
+      shell: pwsh
+      
+    # Only create artifact if files exist
     - name: 📤 Create Build Artifact
+      if: hashFiles('dist/PeviitorSetup.ps1') != ''
       uses: actions/upload-artifact@v4
       with:
         name: PeviitorSetup-${{ github.run_number }}
-        path: |
-          ./dist/PeviitorSetup.ps1
-          ./dist/VERIFICATION.md
+        path: dist/
         retention-days: 30
